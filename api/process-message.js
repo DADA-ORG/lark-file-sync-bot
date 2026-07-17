@@ -104,7 +104,7 @@ module.exports = async (req, res) => {
 
     // 情况三：唯一匹配，写入文档
     const matched = jobs.find((j) => j.recordId === matchedIds[0]);
-    if (!matched || !matched.docToken) {
+    if (!matched || !matched.docRef) {
       await replyToMessage(msgId, `匹配到了"${matched?.company} - ${matched?.position}"，但这条记录没有关联文档，请检查 Base 里的文档字段。`);
       await writeLog({
         msgId, chatId, rawText: cleanText,
@@ -120,7 +120,7 @@ module.exports = async (req, res) => {
     const dateStr = new Date().toISOString().slice(0, 10);
     const lineToWrite = `[${dateStr}] ${result.update_summary}`;
 
-    const writeResult = await appendUpdateToDoc(matched.docToken, lineToWrite);
+    const writeResult = await appendUpdateToDoc(matched.docRef, lineToWrite);
 
     await replyToMessage(
       msgId,
