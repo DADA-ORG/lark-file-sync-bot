@@ -1,6 +1,6 @@
 # lark-file-sync-bot — 项目总览
 
-生成时间：2026-07-17
+生成时间：2026-07-17（2026-07-17 更新：完成部署收尾）
 写给：团队内部，用于快速了解项目现状
 
 ---
@@ -66,9 +66,9 @@
 
 ## 源代码在哪里
 
-Git 远程仓库：`https://github.com/DADA-ORG/lark-file-sync-bot.git`，分支 `main`，最新提交 `71f6c2b`（"更新内容加序号；LLM改为如实转述不做精简删减"）。
+Git 远程仓库：`https://github.com/DADA-ORG/lark-file-sync-bot.git`，分支 `main`，最新提交 `e834c06`（"清理: 删除临时调试接口 debug-jobs.js 和 Netlify 遗留部署配置；换正式 Base；锚点找不到时改为插入文档开头；新增项目总览文档"）。
 
-⚠️ **本地有改动还没推到 GitHub**：换正式 Base、锚点找不到时改为插入文档开头、删除临时调试接口和 Netlify 遗留文件这些改动，已经在本地 commit 好了，但还没有 `git push`，只存在于本地连接的文件夹里，没有备份，也不会触发 Vercel 自动部署。需要在自己电脑上执行 `git push` 完成同步。
+✅ **2026-07-17 已推送**：换正式 Base、锚点找不到时改为插入文档开头、删除临时调试接口和 Netlify 遗留文件这几处改动已经推送到 GitHub，本地分支和 `origin/main` 一致，Vercel 已自动触发对应部署。
 
 ---
 
@@ -77,7 +77,7 @@ Git 远程仓库：`https://github.com/DADA-ORG/lark-file-sync-bot.git`，分支
 - **平台**：Vercel（Serverless Functions，Git 集成自动部署）
 - **线上地址**：推测是 `https://lark-file-sync-bot.vercel.app`（原来 `api/debug-jobs.js` 的使用说明里出现过这个地址，该文件已删除，但地址本身应该还是对的），建议登录 Vercel 后台核实项目名和归属账号。
 - **部署方式**：git push 到 `main` 分支后 Vercel 自动构建部署，不需要手动跑部署命令；但环境变量在 Vercel 后台改完之后不会自动生效，需要手动触发一次 Redeploy。
-- **环境变量**（只列变量名，不写值）：`LARK_APP_ID`、`LARK_APP_SECRET`、`LARK_API_BASE_URL`、`LARK_ENCRYPT_KEY`、`LARK_VERIFICATION_TOKEN`、`BASE_APP_TOKEN`、`BASE_JOBS_TABLE_ID`、`BASE_LOG_TABLE_ID`、`BASE_FIELD_COMPANY`、`BASE_FIELD_POSITION`、`BASE_FIELD_ALIAS`、`BASE_FIELD_DOC_TOKEN`、`DOC_ANCHOR_BLOCK_TEXT`、`LLM_PROVIDER`、`LLM_MODEL`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`INTERNAL_SECRET`、`PUBLIC_URL`。
+- **环境变量**（只列变量名，不写值）：`LARK_APP_ID`、`LARK_APP_SECRET`、`LARK_API_BASE_URL`、`LARK_ENCRYPT_KEY`、`LARK_VERIFICATION_TOKEN`、`BASE_APP_TOKEN`、`BASE_JOBS_TABLE_ID`、`BASE_LOG_TABLE_ID`、`BASE_FIELD_COMPANY`、`BASE_FIELD_POSITION`、`BASE_FIELD_ALIAS`、`BASE_FIELD_DOC_TOKEN`、`DOC_ANCHOR_BLOCK_TEXT`、`LLM_PROVIDER`、`LLM_MODEL`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`INTERNAL_SECRET`、`PUBLIC_URL`。项目负责人确认已按正式 Base 的值更新并触发过 Redeploy（2026-07-17）。
 
 ✅ **2026-07-17 已清理**：`netlify.toml`、`netlify/functions/`（Netlify 遗留部署配置）和 `api/debug-jobs.js`（用 URL 明文密钥鉴权的临时调试接口）已从代码里删除，改动已在本地 commit，push 后 Vercel 上的线上版本也会同步移除。
 
@@ -88,7 +88,7 @@ Git 远程仓库：`https://github.com/DADA-ORG/lark-file-sync-bot.git`，分支
 - **Lark 自建应用**：App ID `cli_aad231d036b85ee6`，归属 dadaconsultants 账号下的自建应用；App Secret 已在 2026-07-17 换成正式凭证，写入本地 `.env` 和 Vercel 环境变量。
 - **GitHub 仓库**：`DADA-ORG` 组织下的 `lark-file-sync-bot`，具体谁有 push 权限 `[待补充：不确定，建议项目负责人核实组织成员和仓库权限设置]`。
 - **Vercel 项目**：归属账号未知（可能通过 GitHub OAuth 关联），建议登录 Vercel 后台在 Settings 里核实 owner 和团队成员权限。
-- **Lark 正式 Base / 知识库权限**：⚠️ 截至 2026-07-17，应用访问这个正式知识库节点（`JCLgwEygCiY907kU1KKlcjBxgab`）时报错 `131006 permission denied: node permission denied, tenant needs read permission`，说明应用还没有被加为这个知识库空间/节点的协作者，正式 Base 的读写链路目前还没打通，需要知识库管理员手动把应用加进去。
+- **Lark 正式 Base / 知识库权限**：2026-07-17 早些时候访问这个正式知识库节点（`JCLgwEygCiY907kU1KKlcjBxgab`）报过 `131006 permission denied` 错误（应用没被加为知识库协作者），项目负责人已确认处理完成，正式 Base 的读写链路应已打通——建议下次有人接手时，实际发一条测试消息复核一遍，而不是只看这里的记录。
 
 ---
 
