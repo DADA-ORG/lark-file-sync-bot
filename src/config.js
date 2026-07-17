@@ -22,7 +22,7 @@ module.exports = {
     },
   },
   doc: {
-    anchorBlockText: process.env.DOC_ANCHOR_BLOCK_TEXT || '群内更新记录',
+    anchorBlockText: process.env.DOC_ANCHOR_BLOCK_TEXT || 'Updates（AI总结）',
   },
   llm: {
     provider: process.env.LLM_PROVIDER || 'anthropic',

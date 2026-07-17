@@ -116,11 +116,9 @@ module.exports = async (req, res) => {
     }
 
     // 如需在更新记录里展示顾问真实姓名，可在此用 body.event.sender.sender_id.open_id
-    // 调用通讯录 API（contact:user.base:readonly 权限）查询后拼进 lineToWrite
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const lineToWrite = `[${dateStr}] ${result.update_summary}`;
-
-    const writeResult = await appendUpdateToDoc(matched.docRef, lineToWrite);
+    // 调用通讯录 API（contact:user.base:readonly 权限）查询后拼进摘要文本。
+    // 日期标题现在由 docsWrite.js 内部按新加坡时区自动生成、自动分组，这里不用再拼日期前缀。
+    const writeResult = await appendUpdateToDoc(matched.docRef, result.update_summary);
 
     await replyToMessage(
       msgId,
@@ -129,7 +127,7 @@ module.exports = async (req, res) => {
     await writeLog({
       msgId, chatId, rawText: cleanText,
       company: matched.company, position: matched.position, matchedRecordId: matched.recordId,
-      status: 'success', detail: lineToWrite,
+      status: 'success', detail: result.update_summary,
     });
 
     res.status(200).send('ok');
