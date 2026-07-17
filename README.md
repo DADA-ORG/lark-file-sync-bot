@@ -4,45 +4,38 @@
 
 ## 一、准备工作（Base 结构）
 
-> 当前 `.env.example` 里已经填好了测试用的 Base（app_token: `YMHDbUAw8a72hTsPVbNlXnvMgqh`，岗位表: `tblHC9cZOUNUmC1D`，日志表: `tblpSzHgMRccUrMI`），先拿这两张表跑通流程，换正式表时改这三个值即可。
+> **2026-07-17 更新**：已换成 dadaconsultants 的正式 Base，挂在知识库下：
+> Wiki 节点 `https://dadaconsultants.sg.larksuite.com/wiki/JCLgwEygCiY907kU1KKlcjBxgab`，
+> 岗位表 `tblWMTsltmMpF8rL`，日志表 `tbllQecdog8LtITc`。这三个值已经填进 `.env.example` 和本地 `.env`。
+> `resolveBaseAppToken.js` 会自动把 Wiki 链接换成真正的 app_token，不用手动转换。
+> 之前跑通流程用的测试 Base（`YMHDbUAw8a72hTsPVbNlXnvMgqh`）信息留在 `.env.example` 注释里，不再使用。
 
 ### 1. 岗位信息表
 
-已经通过 Customize Field 面板核对过实际列名，`.env.example` 里的 `BASE_FIELD_*` 已经按下面这个对好了：
+正式表列名和之前测试表核对过的一致，`.env.example` 里的 `BASE_FIELD_*` 不用改：
 
 | Base 里的实际列名 | 对应 `.env` 变量 | 类型 | 说明 |
 | --- | --- | --- | --- |
 | 客户 | `BASE_FIELD_COMPANY` | 文本（主字段） | 公司名 |
 | 项目名称 | `BASE_FIELD_POSITION` | 文本 | 岗位名 |
 | Lark Link/Notes | `BASE_FIELD_DOC_TOKEN` | 超链接 | 代码里的 `extractDocToken` 已经兼容这种类型（`{link, text}` 结构），会自动从链接里解析出 document_id |
-| （无） | `BASE_FIELD_ALIAS` | — | 测试表里没有别名列，留空/默认值都行，代码会按空值处理 |
-| 行业 | 不涉及 | 单选 | bot 不用这一列，忽略即可 |
+| （其他列，比如"行业"） | 不涉及 | — | bot 只用上面这三列，正式表里的其他列一律忽略，不用配置 |
 
-测试表里目前只有 AIPULSE 那两条记录挂了链接，其余几条（ANT / Alauda / AliCloud）这一列是空的——测试的时候如果 @bot 说这几家公司的更新，bot 会回复"匹配到了但没有关联文档"，这是预期行为，不是 bug，正式表记得把链接都填上。
+用户明确说明只有这三列对应 bot 需要的信息，没有单独的"别名"列，所以 `BASE_FIELD_ALIAS` 不再假设有对应列，保持默认占位值即可——代码找不到这一列时按空值处理，不影响运行。
 
-如果之后换了正式表、列名不一样，改 `.env` 里对应的 `BASE_FIELD_*` 去匹配新列名即可，不用改代码。
+正式表里**不是每条岗位记录都填了 Lark Link/Notes**（关联文档）。这不用提前补齐：@bot 触发某条没填文档链接的记录时，bot 会自动回复"匹配到了但这条记录没有关联文档，请检查 Base 里的文档字段"，相当于自带提醒，看到这条回复去 Base 里补链接即可。
+
+如果之后列名有变化，改 `.env` 里对应的 `BASE_FIELD_*` 去匹配新列名即可，不用改代码。
 
 ### 2. 日志表
 
-日志表（`tblpSzHgMRccUrMI`，侧边栏里叫"Group- File Sync Bot 日..."）确认目前是全新空表，只有默认的一列。需要在里面用 **+ New field** 手动加 9 列，列名和类型如下（按你截图里的英文界面来说）：
-
-| 列名（照抄，区分大小写） | New field 时选的类型 |
-| --- | --- |
-| msg_id | Text |
-| chat_id | Text |
-| raw_text | Text |
-| company | Text |
-| position | Text |
-| matched_record_id | Text |
-| status | Text |
-| detail | Text |
-| time | Date |
-
-建完之后不用填任何内容，表格保持空的就行，bot 跑起来之后会自动往里面写记录。默认自带的那一列（"Text" 主字段）留着不用管，多一列不影响代码运行。
+日志表（`tbllQecdog8LtITc`）已经手动加好 9 列（msg_id / chat_id / raw_text / company / position / matched_record_id / status / detail / time），不用再配置，bot 跑起来后会自动写记录。
 
 ### 3. 岗位文档模板
 
-每个岗位对应的文档里，提前放一个标题 block，文字内容和 `.env` 里的 `DOC_ANCHOR_BLOCK_TEXT` 一致（默认"群内更新记录"），bot 写入的内容会追加在这个标题下面。
+每个岗位对应的文档里，提前放一个标题 block，文字内容和 `.env` 里的 `DOC_ANCHOR_BLOCK_TEXT` 一致（默认 **"Updates（AI总结）"**，代码里是按"包含"而不是"完全相等"匹配这段文字的，见 `docsWrite.js` 的 `blockPlainText(b).includes(...)`），bot 写入的内容会追加在这个标题下面。
+
+**如果某份文档还没放锚点标题**：不用提前手动补——bot 第一次往这份文档写入时，如果找不到锚点，会自动把内容连同一行 `⚠️ 未在文档中找到锚点` 的提示插到**文档最开头**（不是末尾，方便一打开就看到），同时群里的回复也会带上"（未找到锚点，已追加到文档开头，建议检查模板）"。看到这个提示，去文档里把提示文字替换成正式的锚点标题（`Updates（AI总结）`）即可，后续更新会正常归位。详细行为见「使用指南.md」的"锚点"章节。
 
 ## 二、飞书/Lark 自建应用配置
 

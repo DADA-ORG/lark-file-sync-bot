@@ -111,7 +111,8 @@ async function createChildren(documentId, parentBlockId, index, children, token)
 //   [Heading1] 2026 July 16th
 //     ...
 // 日期标题、岗位标题、更新正文都是"锚点block"的直接子节点（同级，靠顺序体现层级，不互相嵌套）。
-// 找不到锚点就退化成在文档根节点末尾加一条纯文本提示+内容，避免更新内容丢失。
+// 找不到锚点就退化成在文档根节点【开头】（index=0）加一条纯文本提示+内容，避免更新内容丢失，
+// 也让顾问/管理员一打开文档就能看到，不用翻到最后才发现漏配了锚点。
 async function appendUpdateToDoc(docRef, positionLabel, text) {
   const token = await getTenantAccessToken();
   const documentId = await resolveDocumentId(docRef, token);
@@ -127,16 +128,15 @@ async function appendUpdateToDoc(docRef, positionLabel, text) {
     if (!rootBlock) {
       throw new Error('文档里既没找到锚点 block 也没找到根 block，请检查 document_id 是否正确');
     }
-    // 退化路径：没找到锚点，直接加到文档末尾，避免内容丢失
-    const childrenCount = blocks.filter((b) => b.parent_id === rootBlock.block_id).length;
+    // 退化路径：没找到锚点，直接插到文档开头（index=0），避免更新内容丢失、也方便被发现
     const fallbackChildren = [
-      `⚠️ 未在文档中找到"${config.doc.anchorBlockText}"锚点，以下内容追加在文档末尾`,
+      `⚠️ 未在文档中找到"${config.doc.anchorBlockText}"锚点，以下内容追加在文档开头`,
       `${positionLabel}：${text}`,
     ].map((line) => ({
       block_type: BLOCK_TYPE.TEXT,
       text: { elements: [{ text_run: { content: line } }] },
     }));
-    await createChildren(documentId, rootBlock.block_id, childrenCount, fallbackChildren, token);
+    await createChildren(documentId, rootBlock.block_id, 0, fallbackChildren, token);
     return { usedFallback: true };
   }
 

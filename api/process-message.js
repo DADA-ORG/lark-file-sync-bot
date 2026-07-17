@@ -122,7 +122,7 @@ module.exports = async (req, res) => {
 
     await replyToMessage(
       msgId,
-      `已同步至《${matched.company} - ${matched.position}》文档${writeResult.usedFallback ? '（未找到锚点，已追加到文档末尾，建议检查模板）' : ''}`
+      `已同步至《${matched.company} - ${matched.position}》文档${writeResult.usedFallback ? '（未找到锚点，已追加到文档开头，建议检查模板）' : ''}`
     );
     await writeLog({
       msgId, chatId, rawText: cleanText,
