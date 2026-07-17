@@ -101,15 +101,18 @@ async function createChildren(documentId, parentBlockId, index, children, token)
 }
 
 // 往指定 docRef（{type,token}，见 bitableJobs.js 的 extractDocRef）对应的文档里追加一条更新记录。
-// 目标格式（照抄用户手动维护的参考文档结构）：
-//   [Heading1] 2026 July 17th          <- 日期标题，越新的日期排越靠前
-//     [Heading3] 更新摘要1              <- 同一天的多条更新，都用Heading3，
-//     [Heading3] 更新摘要2                 Lark大纲面板会自动给同级heading3编号1,2,3...
+// 两层分组结构：日期 -> 岗位 -> 具体更新内容，例：
+//   [Heading1] 2026 July 17th                              <- 日期标题，越新的日期排越靠前
+//     [Heading3] Public Cloud Technical Support Engineer   <- 岗位标题（同一天内新的岗位排前面）
+//       [正文] 岗位需求调整，更倾向产品相关背景...             <- 具体更新内容，普通文字，不是标题
+//       [正文] 岗位要求变更：不再需要做产品相关工作            <- 同一天+同一岗位的下一条更新，接在后面
+//     [Heading3] Solution Architect                          <- 同一天但不同岗位，另开一个小节
+//       [正文] ...
 //   [Heading1] 2026 July 16th
-//     [Heading3] ...
-// 日期标题和更新条目都是"锚点block"的直接子节点（同级，不互相嵌套）。
+//     ...
+// 日期标题、岗位标题、更新正文都是"锚点block"的直接子节点（同级，靠顺序体现层级，不互相嵌套）。
 // 找不到锚点就退化成在文档根节点末尾加一条纯文本提示+内容，避免更新内容丢失。
-async function appendUpdateToDoc(docRef, text) {
+async function appendUpdateToDoc(docRef, positionLabel, text) {
   const token = await getTenantAccessToken();
   const documentId = await resolveDocumentId(docRef, token);
   const blocks = await listAllBlocks(documentId, token);
@@ -124,11 +127,11 @@ async function appendUpdateToDoc(docRef, text) {
     if (!rootBlock) {
       throw new Error('文档里既没找到锚点 block 也没找到根 block，请检查 document_id 是否正确');
     }
-    // 退化路径：没找到"Updates（AI总结）"锚点，直接加到文档末尾，避免内容丢失
+    // 退化路径：没找到锚点，直接加到文档末尾，避免内容丢失
     const childrenCount = blocks.filter((b) => b.parent_id === rootBlock.block_id).length;
     const fallbackChildren = [
       `⚠️ 未在文档中找到"${config.doc.anchorBlockText}"锚点，以下内容追加在文档末尾`,
-      text,
+      `${positionLabel}：${text}`,
     ].map((line) => ({
       block_type: BLOCK_TYPE.TEXT,
       text: { elements: [{ text_run: { content: line } }] },
@@ -138,11 +141,19 @@ async function appendUpdateToDoc(docRef, text) {
   }
 
   const todayStr = formatDateHeading(new Date());
-  const itemBlock = {
+  const dateHeadingBlock = {
+    block_type: BLOCK_TYPE.HEADING1,
+    heading1: { elements: [{ text_run: { content: todayStr } }] },
+  };
+  const positionHeadingBlock = {
     block_type: BLOCK_TYPE.HEADING3,
     heading3: {
-      elements: [{ text_run: { content: text, text_element_style: { bold: true } } }],
+      elements: [{ text_run: { content: positionLabel, text_element_style: { bold: true } } }],
     },
+  };
+  const textBlock = {
+    block_type: BLOCK_TYPE.TEXT,
+    text: { elements: [{ text_run: { content: text } }] },
   };
 
   const childIds = anchorBlock.children || [];
@@ -150,26 +161,52 @@ async function appendUpdateToDoc(docRef, text) {
   const firstIsTodayHeading =
     firstChild && firstChild.block_type === BLOCK_TYPE.HEADING1 && blockPlainText(firstChild) === todayStr;
 
-  if (firstIsTodayHeading) {
-    // 今天的日期标题已经在最上面了，把新条目接到"今天"这组末尾
-    // （即：从第1个位置开始，数连续多少个heading3属于今天，插到这串的最后面）
-    let insertAt = 1;
-    while (insertAt < childIds.length) {
+  if (!firstIsTodayHeading) {
+    // 新的一天：日期标题 + 岗位标题 + 第一条更新，一起插到锚点最前面（index=0），把之前的内容往下挤
+    await createChildren(
+      documentId,
+      anchorBlock.block_id,
+      0,
+      [dateHeadingBlock, positionHeadingBlock, textBlock],
+      token
+    );
+    return { usedFallback: false };
+  }
+
+  // 今天的日期标题已经在最上面了，先框出"今天"这个区间的范围：
+  // 从index=1开始，直到遇到下一个Heading1（新的一天）或者到末尾
+  let todayEnd = 1;
+  while (todayEnd < childIds.length) {
+    const b = blocksById.get(childIds[todayEnd]);
+    if (b && b.block_type === BLOCK_TYPE.HEADING1) break;
+    todayEnd++;
+  }
+
+  // 在今天的区间里找有没有已经存在的同岗位小节（Heading3文字完全匹配）
+  let matchIndex = -1;
+  for (let i = 1; i < todayEnd; i++) {
+    const b = blocksById.get(childIds[i]);
+    if (b && b.block_type === BLOCK_TYPE.HEADING3 && blockPlainText(b) === positionLabel) {
+      matchIndex = i;
+      break;
+    }
+  }
+
+  if (matchIndex === -1) {
+    // 今天还没有这个岗位的小节，新建一个，插在今天日期标题正下面（今天区间最前面）
+    await createChildren(documentId, anchorBlock.block_id, 1, [positionHeadingBlock, textBlock], token);
+  } else {
+    // 已经有这个岗位的小节了，把新的一行接到这个小节最后（下一个Heading3或今天区间结尾之前）
+    let insertAt = matchIndex + 1;
+    while (insertAt < todayEnd) {
       const b = blocksById.get(childIds[insertAt]);
-      if (b && b.block_type === BLOCK_TYPE.HEADING3) {
+      if (b && b.block_type === BLOCK_TYPE.TEXT) {
         insertAt++;
       } else {
         break;
       }
     }
-    await createChildren(documentId, anchorBlock.block_id, insertAt, [itemBlock], token);
-  } else {
-    // 新的一天：日期标题 + 第一条更新，一起插到锚点最前面（index=0），把之前的内容往下挤
-    const headingBlock = {
-      block_type: BLOCK_TYPE.HEADING1,
-      heading1: { elements: [{ text_run: { content: todayStr } }] },
-    };
-    await createChildren(documentId, anchorBlock.block_id, 0, [headingBlock, itemBlock], token);
+    await createChildren(documentId, anchorBlock.block_id, insertAt, [textBlock], token);
   }
 
   return { usedFallback: false };

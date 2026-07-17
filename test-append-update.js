@@ -1,8 +1,8 @@
-// 一次性测试脚本：往 AIPULSE - Public Cloud Technical Support Engineer 这份真实文档里
-// 连续写两条测试更新，模拟"同一天两条更新"的场景，验证：
-//   1) 第一条：新建 今天日期(Heading1) + 更新1(Heading3)
-//   2) 第二条：不重复日期，直接在今天这组下面追加 更新2(Heading3)
-// 写完会把最新的block结构打印出来，方便核对。测试内容标了[TEST]前缀，方便你之后手动删掉。
+// 一次性测试脚本（更新版，两层分组：日期 -> 岗位）：往 AIPULSE 这份真实文档里写测试更新，验证：
+//   1) 第1条（新岗位A）：新建 今天日期(H1) + 岗位A标题(H3) + 更新正文
+//   2) 第2条（同一天，同岗位A）：不重复日期和岗位标题，直接接一行正文到岗位A小节下面
+//   3) 第3条（同一天，不同岗位B）：不重复日期，但新开一个岗位B小节
+// 写完打印最新block结构核对。测试内容标了[TEST]前缀，方便之后手动删。
 //
 // 用法：
 //   LARK_APP_ID=cli_aad23ce453399ee9 \
@@ -30,13 +30,29 @@ async function dumpAnchorArea() {
 }
 
 async function main() {
-  console.log('写第1条...');
-  const r1 = await appendUpdateToDoc(DOC_REF, '[TEST] 客户说明天约面试（第1条测试更新）');
+  console.log('写第1条（岗位A，新建小节）...');
+  const r1 = await appendUpdateToDoc(
+    DOC_REF,
+    '[TEST] Public Cloud Technical Support Engineer',
+    '[TEST内容] 岗位需求调整，更倾向产品相关背景'
+  );
   console.log('结果:', r1);
 
-  console.log('\n写第2条（同一天）...');
-  const r2 = await appendUpdateToDoc(DOC_REF, '[TEST] 候选人已确认到岗时间（第2条测试更新）');
+  console.log('\n写第2条（岗位A，同一天，应该接在同一小节下面）...');
+  const r2 = await appendUpdateToDoc(
+    DOC_REF,
+    '[TEST] Public Cloud Technical Support Engineer',
+    '[TEST内容] 仍需具备运营经验、技术能力和落地能力'
+  );
   console.log('结果:', r2);
+
+  console.log('\n写第3条（岗位B，同一天，应该新开一个岗位小节）...');
+  const r3 = await appendUpdateToDoc(
+    DOC_REF,
+    '[TEST] Solution Architect',
+    '[TEST内容] 客户希望尽快安排面试'
+  );
+  console.log('结果:', r3);
 
   await dumpAnchorArea();
 }

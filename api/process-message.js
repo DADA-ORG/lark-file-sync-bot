@@ -117,8 +117,8 @@ module.exports = async (req, res) => {
 
     // 如需在更新记录里展示顾问真实姓名，可在此用 body.event.sender.sender_id.open_id
     // 调用通讯录 API（contact:user.base:readonly 权限）查询后拼进摘要文本。
-    // 日期标题现在由 docsWrite.js 内部按新加坡时区自动生成、自动分组，这里不用再拼日期前缀。
-    const writeResult = await appendUpdateToDoc(matched.docRef, result.update_summary);
+    // 日期标题、岗位标题现在由 docsWrite.js 内部自动生成/分组，这里只传岗位名和更新摘要。
+    const writeResult = await appendUpdateToDoc(matched.docRef, matched.position, result.update_summary);
 
     await replyToMessage(
       msgId,
