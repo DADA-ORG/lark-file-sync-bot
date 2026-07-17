@@ -151,10 +151,11 @@ async function appendUpdateToDoc(docRef, positionLabel, text) {
       elements: [{ text_run: { content: positionLabel, text_element_style: { bold: true } } }],
     },
   };
-  const textBlock = {
+  // 手动加序号（这些是普通文字block，不是标题，Lark大纲不会像heading那样自动编号）
+  const makeTextBlock = (number) => ({
     block_type: BLOCK_TYPE.TEXT,
-    text: { elements: [{ text_run: { content: text } }] },
-  };
+    text: { elements: [{ text_run: { content: `${number}. ${text}` } }] },
+  });
 
   const childIds = anchorBlock.children || [];
   const firstChild = childIds.length > 0 ? blocksById.get(childIds[0]) : null;
@@ -162,12 +163,12 @@ async function appendUpdateToDoc(docRef, positionLabel, text) {
     firstChild && firstChild.block_type === BLOCK_TYPE.HEADING1 && blockPlainText(firstChild) === todayStr;
 
   if (!firstIsTodayHeading) {
-    // 新的一天：日期标题 + 岗位标题 + 第一条更新，一起插到锚点最前面（index=0），把之前的内容往下挤
+    // 新的一天：日期标题 + 岗位标题 + 第一条更新（序号从1开始），一起插到锚点最前面（index=0）
     await createChildren(
       documentId,
       anchorBlock.block_id,
       0,
-      [dateHeadingBlock, positionHeadingBlock, textBlock],
+      [dateHeadingBlock, positionHeadingBlock, makeTextBlock(1)],
       token
     );
     return { usedFallback: false };
@@ -193,20 +194,22 @@ async function appendUpdateToDoc(docRef, positionLabel, text) {
   }
 
   if (matchIndex === -1) {
-    // 今天还没有这个岗位的小节，新建一个，插在今天日期标题正下面（今天区间最前面）
-    await createChildren(documentId, anchorBlock.block_id, 1, [positionHeadingBlock, textBlock], token);
+    // 今天还没有这个岗位的小节，新建一个（序号从1开始），插在今天日期标题正下面（今天区间最前面）
+    await createChildren(documentId, anchorBlock.block_id, 1, [positionHeadingBlock, makeTextBlock(1)], token);
   } else {
-    // 已经有这个岗位的小节了，把新的一行接到这个小节最后（下一个Heading3或今天区间结尾之前）
+    // 已经有这个岗位的小节了，数一下这个小节现有多少条，新的一条接在最后，序号自增
     let insertAt = matchIndex + 1;
+    let existingCount = 0;
     while (insertAt < todayEnd) {
       const b = blocksById.get(childIds[insertAt]);
       if (b && b.block_type === BLOCK_TYPE.TEXT) {
         insertAt++;
+        existingCount++;
       } else {
         break;
       }
     }
-    await createChildren(documentId, anchorBlock.block_id, insertAt, [textBlock], token);
+    await createChildren(documentId, anchorBlock.block_id, insertAt, [makeTextBlock(existingCount + 1)], token);
   }
 
   return { usedFallback: false };
