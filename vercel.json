@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/process-message.js": {
+      "maxDuration": 60
+    },
+    "api/lark-event.js": {
+      "maxDuration": 10
+    }
+  }
+}

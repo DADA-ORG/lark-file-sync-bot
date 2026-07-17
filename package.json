@@ -1,0 +1,16 @@
+{
+  "name": "lark-file-sync-bot",
+  "version": "0.1.0",
+  "description": "飞书/Lark 群聊岗位更新自动同步到文档的 bot（Vercel Serverless Functions 部署）",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "devDependencies": {
+    "vercel": "^37.0.0"
+  }
+}
