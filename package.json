@@ -10,6 +10,9 @@
   "scripts": {
     "dev": "vercel dev"
   },
+  "dependencies": {
+    "@vercel/functions": "^1.5.0"
+  },
   "devDependencies": {
     "vercel": "^37.0.0"
   }

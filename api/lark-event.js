@@ -6,6 +6,7 @@
 // 真正耗时的 LLM/Base/文档处理，转发给 api/process-message.js 异步跑，
 // 这里不等它跑完就直接给飞书回 200。
 
+const { waitUntil } = require('@vercel/functions');
 const config = require('../src/config');
 const { decryptEventBody } = require('../src/larkCrypto');
 
@@ -57,15 +58,21 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // 转发给后台处理函数，不等待它跑完
-  fetch(`${config.siteUrl}/api/process-message`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-internal-secret': config.internalSecret || '',
-    },
-    body: JSON.stringify(body),
-  }).catch((e) => console.error('触发 process-message 失败', e));
+  // 转发给后台处理函数。注意：不能就这么裸调 fetch() 不管——Vercel 的无服务器环境
+  // 在响应发出去之后可能立刻冻结/回收这个函数实例，没有 await 的请求很可能根本
+  // 没发出去就被打断了。用 waitUntil() 明确告诉 Vercel："响应可以先发，但这个
+  // 后台任务要等它跑完了才能真正结束这次调用"，这样才能保证 process-message
+  // 一定会被触发到。
+  waitUntil(
+    fetch(`${config.siteUrl}/api/process-message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': config.internalSecret || '',
+      },
+      body: JSON.stringify(body),
+    }).catch((e) => console.error('触发 process-message 失败', e))
+  );
 
   res.status(200).send('ok');
 };
