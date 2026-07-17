@@ -1,4 +1,5 @@
 const { getTenantAccessToken } = require('./larkAuth');
+const { getBaseAppToken } = require('./resolveBaseAppToken');
 const config = require('./config');
 
 // "关联文档" 字段在 Base 里可能是几种类型，这里都兼容一下：
@@ -42,13 +43,14 @@ function extractDocRef(rawValue) {
 // 后面既要传给 LLM 做匹配，也要在匹配到之后拿 docToken 去写文档
 async function fetchAllJobs() {
   const token = await getTenantAccessToken();
+  const appToken = await getBaseAppToken();
   const { fields } = config.base;
   const records = [];
   let pageToken = '';
 
   do {
     const url = new URL(
-      `${config.lark.apiBaseUrl}/open-apis/bitable/v1/apps/${config.base.appToken}/tables/${config.base.jobsTableId}/records`
+      `${config.lark.apiBaseUrl}/open-apis/bitable/v1/apps/${appToken}/tables/${config.base.jobsTableId}/records`
     );
     url.searchParams.set('page_size', '100');
     if (pageToken) url.searchParams.set('page_token', pageToken);

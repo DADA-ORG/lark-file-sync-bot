@@ -1,4 +1,5 @@
 const { getTenantAccessToken } = require('./larkAuth');
+const { getBaseAppToken } = require('./resolveBaseAppToken');
 const config = require('./config');
 
 // 日志表建议的列（在 Base 里新建一张空表，列名和下面这些 key 对应即可，
@@ -7,7 +8,8 @@ const config = require('./config');
 
 async function hasProcessed(msgId) {
   const token = await getTenantAccessToken();
-  const url = `${config.lark.apiBaseUrl}/open-apis/bitable/v1/apps/${config.base.appToken}/tables/${config.base.logTableId}/records/search`;
+  const appToken = await getBaseAppToken();
+  const url = `${config.lark.apiBaseUrl}/open-apis/bitable/v1/apps/${appToken}/tables/${config.base.logTableId}/records/search`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
@@ -32,7 +34,8 @@ async function hasProcessed(msgId) {
 
 async function writeLog({ msgId, chatId, rawText, company, position, matchedRecordId, status, detail }) {
   const token = await getTenantAccessToken();
-  const url = `${config.lark.apiBaseUrl}/open-apis/bitable/v1/apps/${config.base.appToken}/tables/${config.base.logTableId}/records`;
+  const appToken = await getBaseAppToken();
+  const url = `${config.lark.apiBaseUrl}/open-apis/bitable/v1/apps/${appToken}/tables/${config.base.logTableId}/records`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
