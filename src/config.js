@@ -33,9 +33,17 @@ module.exports = {
   // api/lark-event.js 内部触发 api/process-message.js 时用这个密钥互相校验，
   // 防止有人直接对外网 POST /api/process-message 伪造事件、白嫖 LLM 调用或乱写文档
   internalSecret: process.env.INTERNAL_SECRET,
-  // Vercel 会自动注入 VERCEL_URL（当前部署域名，不带协议头），本地 vercel dev
-  // 调试时用 PUBLIC_URL 兜底
-  siteUrl: process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.PUBLIC_URL || 'http://localhost:3000',
+  // 内部自己调自己（lark-event -> process-message）要用一个不会被 Vercel
+  // Deployment Protection 拦住的稳定地址：
+  // - VERCEL_URL 是"这次部署专属"的域名（带一串随机hash），Vercel默认对这种
+  //   域名开启登录保护，内部fetch会被重定向到 vercel.com/login，process-message
+  //   永远收不到请求——这是之前"bot不回复"的根因。
+  // - VERCEL_PROJECT_PRODUCTION_URL 是项目稳定的生产域名（不带hash，类似
+  //   lark-file-sync-bot.vercel.app），生产环境下这个不受Deployment Protection
+  //   影响，优先用它。
+  // - PUBLIC_URL 留作本地调试/手动兜底。
+  siteUrl: process.env.PUBLIC_URL
+    || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null)
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+    || 'http://localhost:3000',
 };
