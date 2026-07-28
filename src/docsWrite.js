@@ -122,22 +122,6 @@ async function appendUpdateToDoc(docRef, clientLabel, text) {
     blockPlainText(b).includes(config.doc.anchorBlockText)
   );
 
-  if (!anchorBlock) {
-    if (!rootBlock) {
-      throw new Error('文档里既没找到锚点 block 也没找到根 block，请检查 document_id 是否正确');
-    }
-    // 退化路径：没找到锚点，直接插到文档开头（index=0），避免更新内容丢失、也方便被发现
-    const fallbackChildren = [
-      `⚠️ 未在文档中找到"${config.doc.anchorBlockText}"锚点，以下内容追加在文档开头`,
-      `${clientLabel}：${text}`,
-    ].map((line) => ({
-      block_type: BLOCK_TYPE.TEXT,
-      text: { elements: [{ text_run: { content: line } }] },
-    }));
-    await createChildren(documentId, rootBlock.block_id, 0, fallbackChildren, token);
-    return { usedFallback: true };
-  }
-
   const todayStr = formatDateHeading(new Date());
   const dateHeadingBlock = {
     block_type: BLOCK_TYPE.HEADING1,
@@ -148,6 +132,24 @@ async function appendUpdateToDoc(docRef, clientLabel, text) {
     block_type: BLOCK_TYPE.TEXT,
     text: { elements: [{ text_run: { content: `${number}. ${text}` } }] },
   });
+
+  // 文档里还没有锚点标题：自动在文档顶部建一个「Updates（AI总结）」标题，再把它当锚点往下写。
+  // 这样任何客户文档第一次被写时会自动成型，不需要有人手动去每个文档预先放锚点，
+  // 顾问那边也永远不会看到"未找到锚点"这种看不懂的提示。
+  if (!anchorBlock) {
+    if (!rootBlock) {
+      throw new Error('文档里既没找到锚点也没找到根节点，请检查 document_id 是否正确');
+    }
+    const anchorHeadingBlock = {
+      block_type: BLOCK_TYPE.HEADING1,
+      heading1: { elements: [{ text_run: { content: config.doc.anchorBlockText } }] },
+    };
+    const created = await createChildren(documentId, rootBlock.block_id, 0, [anchorHeadingBlock], token);
+    const newAnchorId = created.data.children[0].block_id;
+    // 新锚点下面还没有任何内容，直接放"今天日期标题 + 第一条更新"
+    await createChildren(documentId, newAnchorId, 0, [dateHeadingBlock, makeTextBlock(1)], token);
+    return { usedFallback: false };
+  }
 
   const childIds = anchorBlock.children || [];
   const firstChild = childIds.length > 0 ? blocksById.get(childIds[0]) : null;

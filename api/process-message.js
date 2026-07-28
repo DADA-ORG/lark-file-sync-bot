@@ -72,7 +72,7 @@ module.exports = async (req, res) => {
     if (matchedIds.length === 0) {
       await replyToMessage(
         msgId,
-        `没能匹配到对应的客户（识别到可能是"${result.raw_company_guess || '未知客户'}"），请检查客户名称，或先在 Base 里创建这个客户。`
+        `没能匹配到客户「${result.raw_company_guess || '未知'}」。麻烦确认下客户名称有没有写对，或先把这个客户加进客户表。`
       );
       await writeLog({
         msgId, chatId, rawText: cleanText,
@@ -105,7 +105,7 @@ module.exports = async (req, res) => {
     // 情况三：唯一客户，写入这个客户的文档
     const matched = clients[matchedIds[0]];
     if (!matched.docRef) {
-      await replyToMessage(msgId, `匹配到客户"${matched.company}"，但这个客户在 Base 里没有关联文档，请检查该客户岗位行的文档字段。`);
+      await replyToMessage(msgId, `找到了客户「${matched.company}」，但还没给它配更新文档。请在客户表的「Lark Link/Notes」栏补上文档链接后再发一次。`);
       await writeLog({
         msgId, chatId, rawText: cleanText,
         company: matched.company,
@@ -118,12 +118,9 @@ module.exports = async (req, res) => {
     // 如需在更新记录里展示顾问真实姓名，可在此用 body.event.sender.sender_id.open_id
     // 调用通讯录 API（contact:user.base:readonly 权限）查询后拼进摘要文本。
     // 日期标题现在由 docsWrite.js 内部自动生成/分组，这里传客户名（用于兜底路径展示）和更新摘要。
-    const writeResult = await appendUpdateToDoc(matched.docRef, matched.company, result.update_summary);
+    await appendUpdateToDoc(matched.docRef, matched.company, result.update_summary);
 
-    await replyToMessage(
-      msgId,
-      `已同步至《${matched.company}》文档${writeResult.usedFallback ? '（未找到锚点，已追加到文档开头，建议检查模板）' : ''}`
-    );
+    await replyToMessage(msgId, `已同步至《${matched.company}》文档`);
     await writeLog({
       msgId, chatId, rawText: cleanText,
       company: matched.company,
