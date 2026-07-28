@@ -101,19 +101,17 @@ async function createChildren(documentId, parentBlockId, index, children, token)
 }
 
 // 往指定 docRef（{type,token}，见 bitableJobs.js 的 extractDocRef）对应的文档里追加一条更新记录。
-// 两层分组结构：日期 -> 岗位 -> 具体更新内容，例：
-//   [Heading1] 2026 July 17th                              <- 日期标题，越新的日期排越靠前
-//     [Heading3] Public Cloud Technical Support Engineer   <- 岗位标题（同一天内新的岗位排前面）
-//       [正文] 岗位需求调整，更倾向产品相关背景...             <- 具体更新内容，普通文字，不是标题
-//       [正文] 岗位要求变更：不再需要做产品相关工作            <- 同一天+同一岗位的下一条更新，接在后面
-//     [Heading3] Solution Architect                          <- 同一天但不同岗位，另开一个小节
-//       [正文] ...
+// 一个文档 = 一个客户（用户 2026-07 确认的用法），所以按【日期】一层分组即可，不再分岗位小节：
+//   [Heading1] 2026 July 17th          <- 日期标题，越新的日期排越靠前
+//     [正文] 1. 客户说下周二面，两个岗位都在推进...   <- 当天第 1 条更新（普通文字，手动编号）
+//     [正文] 2. 整理了客户资料，大家参考...          <- 当天第 2 条更新，接在后面
 //   [Heading1] 2026 July 16th
-//     ...
-// 日期标题、岗位标题、更新正文都是"锚点block"的直接子节点（同级，靠顺序体现层级，不互相嵌套）。
+//     [正文] 1. ...
+// 日期标题和更新正文都是"锚点block"的直接子节点（同级，靠顺序体现层级，不互相嵌套）。
 // 找不到锚点就退化成在文档根节点【开头】（index=0）加一条纯文本提示+内容，避免更新内容丢失，
 // 也让顾问/管理员一打开文档就能看到，不用翻到最后才发现漏配了锚点。
-async function appendUpdateToDoc(docRef, positionLabel, text) {
+// clientLabel 只用于兜底路径（没锚点时）在提示里标明是哪个客户，正常路径不写它。
+async function appendUpdateToDoc(docRef, clientLabel, text) {
   const token = await getTenantAccessToken();
   const documentId = await resolveDocumentId(docRef, token);
   const blocks = await listAllBlocks(documentId, token);
@@ -131,7 +129,7 @@ async function appendUpdateToDoc(docRef, positionLabel, text) {
     // 退化路径：没找到锚点，直接插到文档开头（index=0），避免更新内容丢失、也方便被发现
     const fallbackChildren = [
       `⚠️ 未在文档中找到"${config.doc.anchorBlockText}"锚点，以下内容追加在文档开头`,
-      `${positionLabel}：${text}`,
+      `${clientLabel}：${text}`,
     ].map((line) => ({
       block_type: BLOCK_TYPE.TEXT,
       text: { elements: [{ text_run: { content: line } }] },
@@ -145,12 +143,6 @@ async function appendUpdateToDoc(docRef, positionLabel, text) {
     block_type: BLOCK_TYPE.HEADING1,
     heading1: { elements: [{ text_run: { content: todayStr } }] },
   };
-  const positionHeadingBlock = {
-    block_type: BLOCK_TYPE.HEADING3,
-    heading3: {
-      elements: [{ text_run: { content: positionLabel, text_element_style: { bold: true } } }],
-    },
-  };
   // 手动加序号（这些是普通文字block，不是标题，Lark大纲不会像heading那样自动编号）
   const makeTextBlock = (number) => ({
     block_type: BLOCK_TYPE.TEXT,
@@ -163,54 +155,31 @@ async function appendUpdateToDoc(docRef, positionLabel, text) {
     firstChild && firstChild.block_type === BLOCK_TYPE.HEADING1 && blockPlainText(firstChild) === todayStr;
 
   if (!firstIsTodayHeading) {
-    // 新的一天：日期标题 + 岗位标题 + 第一条更新（序号从1开始），一起插到锚点最前面（index=0）
+    // 新的一天：日期标题 + 第一条更新（序号从1开始），一起插到锚点最前面（index=0）
     await createChildren(
       documentId,
       anchorBlock.block_id,
       0,
-      [dateHeadingBlock, positionHeadingBlock, makeTextBlock(1)],
+      [dateHeadingBlock, makeTextBlock(1)],
       token
     );
     return { usedFallback: false };
   }
 
-  // 今天的日期标题已经在最上面了，先框出"今天"这个区间的范围：
-  // 从index=1开始，直到遇到下一个Heading1（新的一天）或者到末尾
-  let todayEnd = 1;
-  while (todayEnd < childIds.length) {
-    const b = blocksById.get(childIds[todayEnd]);
-    if (b && b.block_type === BLOCK_TYPE.HEADING1) break;
-    todayEnd++;
-  }
-
-  // 在今天的区间里找有没有已经存在的同岗位小节（Heading3文字完全匹配）
-  let matchIndex = -1;
-  for (let i = 1; i < todayEnd; i++) {
-    const b = blocksById.get(childIds[i]);
-    if (b && b.block_type === BLOCK_TYPE.HEADING3 && blockPlainText(b) === positionLabel) {
-      matchIndex = i;
-      break;
+  // 今天的日期标题已经在最上面（index=0）了。从 index=1 开始数今天已有多少条更新正文，
+  // 直到遇到下一个日期标题（Heading1，即前一天的区块）或到末尾，新的一条接在最后、序号自增。
+  let insertAt = 1;
+  let existingCount = 0;
+  while (insertAt < childIds.length) {
+    const b = blocksById.get(childIds[insertAt]);
+    if (b && b.block_type === BLOCK_TYPE.TEXT) {
+      insertAt++;
+      existingCount++;
+    } else {
+      break; // 遇到下一个日期标题（或其它非正文块），今天的区间到此为止
     }
   }
-
-  if (matchIndex === -1) {
-    // 今天还没有这个岗位的小节，新建一个（序号从1开始），插在今天日期标题正下面（今天区间最前面）
-    await createChildren(documentId, anchorBlock.block_id, 1, [positionHeadingBlock, makeTextBlock(1)], token);
-  } else {
-    // 已经有这个岗位的小节了，数一下这个小节现有多少条，新的一条接在最后，序号自增
-    let insertAt = matchIndex + 1;
-    let existingCount = 0;
-    while (insertAt < todayEnd) {
-      const b = blocksById.get(childIds[insertAt]);
-      if (b && b.block_type === BLOCK_TYPE.TEXT) {
-        insertAt++;
-        existingCount++;
-      } else {
-        break;
-      }
-    }
-    await createChildren(documentId, anchorBlock.block_id, insertAt, [makeTextBlock(existingCount + 1)], token);
-  }
+  await createChildren(documentId, anchorBlock.block_id, insertAt, [makeTextBlock(existingCount + 1)], token);
 
   return { usedFallback: false };
 }

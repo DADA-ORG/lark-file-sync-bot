@@ -5,7 +5,7 @@
 
 const config = require('../src/config');
 const { getBotOpenId } = require('../src/larkBotInfo');
-const { fetchAllJobs } = require('../src/bitableJobs');
+const { fetchAllClients } = require('../src/bitableJobs');
 const { extractAndMatch } = require('../src/llmExtract');
 const { appendUpdateToDoc } = require('../src/docsWrite');
 const { replyToMessage } = require('../src/messageReply');
@@ -63,52 +63,52 @@ module.exports = async (req, res) => {
       cleanText = cleanText.replace(m.key, '').trim();
     }
 
-    // 抽取 + 匹配
-    const jobs = await fetchAllJobs();
-    const result = await extractAndMatch(cleanText, jobs);
-    const matchedIds = result.matched_record_ids || [];
+    // 抽取 + 匹配（在"客户"这一层匹配，不再纠结具体岗位）
+    const clients = await fetchAllClients();
+    const result = await extractAndMatch(cleanText, clients);
+    const matchedIds = (result.matched_client_ids || []).filter((i) => Number.isInteger(i) && clients[i]);
 
-    // 情况一：没匹配到任何候选
+    // 情况一：没匹配到任何客户
     if (matchedIds.length === 0) {
       await replyToMessage(
         msgId,
-        `没能匹配到对应的岗位记录（识别到可能是"${result.raw_company_guess || '未知公司'} - ${result.raw_position_guess || '未知岗位'}"），请检查岗位名称，或先在 Base 里创建这条记录。`
+        `没能匹配到对应的客户（识别到可能是"${result.raw_company_guess || '未知客户'}"），请检查客户名称，或先在 Base 里创建这个客户。`
       );
       await writeLog({
         msgId, chatId, rawText: cleanText,
-        company: result.raw_company_guess, position: result.raw_position_guess,
+        company: result.raw_company_guess,
         status: 'no_match', detail: JSON.stringify(result),
       });
       res.status(200).send('no match');
       return;
     }
 
-    // 情况二：匹配到多条候选，让顾问确认
+    // 情况二：可能指向多个【不同客户】，无法判断是哪个，让顾问确认
+    // （注意：同一个客户名下多个岗位不会走到这里，那只是 1 个客户）
     if (matchedIds.length > 1) {
-      const candidates = jobs.filter((j) => matchedIds.includes(j.recordId));
-      const listText = candidates
-        .map((c, i) => `${i + 1}. ${c.company} - ${c.position}`)
+      const listText = matchedIds
+        .map((id, i) => `${i + 1}. ${clients[id].company}`)
         .join('\n');
       await replyToMessage(
         msgId,
-        `识别到多条可能匹配的岗位记录，请回复更明确的公司/岗位名称重新发一遍：\n${listText}`
+        `识别到可能涉及多个客户，请回复更明确的客户名称重新发一遍：\n${listText}`
       );
       await writeLog({
         msgId, chatId, rawText: cleanText,
-        company: result.raw_company_guess, position: result.raw_position_guess,
+        company: result.raw_company_guess,
         status: 'ambiguous', detail: JSON.stringify(result),
       });
       res.status(200).send('ambiguous');
       return;
     }
 
-    // 情况三：唯一匹配，写入文档
-    const matched = jobs.find((j) => j.recordId === matchedIds[0]);
-    if (!matched || !matched.docRef) {
-      await replyToMessage(msgId, `匹配到了"${matched?.company} - ${matched?.position}"，但这条记录没有关联文档，请检查 Base 里的文档字段。`);
+    // 情况三：唯一客户，写入这个客户的文档
+    const matched = clients[matchedIds[0]];
+    if (!matched.docRef) {
+      await replyToMessage(msgId, `匹配到客户"${matched.company}"，但这个客户在 Base 里没有关联文档，请检查该客户岗位行的文档字段。`);
       await writeLog({
         msgId, chatId, rawText: cleanText,
-        company: matched?.company, position: matched?.position, matchedRecordId: matchedIds[0],
+        company: matched.company,
         status: 'no_doc_token', detail: JSON.stringify(result),
       });
       res.status(200).send('no doc token');
@@ -117,16 +117,16 @@ module.exports = async (req, res) => {
 
     // 如需在更新记录里展示顾问真实姓名，可在此用 body.event.sender.sender_id.open_id
     // 调用通讯录 API（contact:user.base:readonly 权限）查询后拼进摘要文本。
-    // 日期标题、岗位标题现在由 docsWrite.js 内部自动生成/分组，这里只传岗位名和更新摘要。
-    const writeResult = await appendUpdateToDoc(matched.docRef, matched.position, result.update_summary);
+    // 日期标题现在由 docsWrite.js 内部自动生成/分组，这里传客户名（用于兜底路径展示）和更新摘要。
+    const writeResult = await appendUpdateToDoc(matched.docRef, matched.company, result.update_summary);
 
     await replyToMessage(
       msgId,
-      `已同步至《${matched.company} - ${matched.position}》文档${writeResult.usedFallback ? '（未找到锚点，已追加到文档开头，建议检查模板）' : ''}`
+      `已同步至《${matched.company}》文档${writeResult.usedFallback ? '（未找到锚点，已追加到文档开头，建议检查模板）' : ''}`
     );
     await writeLog({
       msgId, chatId, rawText: cleanText,
-      company: matched.company, position: matched.position, matchedRecordId: matched.recordId,
+      company: matched.company,
       status: 'success', detail: result.update_summary,
     });
 
