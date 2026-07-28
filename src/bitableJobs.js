@@ -78,4 +78,42 @@ async function fetchAllJobs() {
   return records;
 }
 
-module.exports = { fetchAllJobs };
+// 按「客户」归拢岗位记录。业务事实（用户 2026-07 确认）：顾问是按客户整体做更新的，
+// 而不是分岗位更新；而且同一个客户名下的多个岗位行，在 Base 里共用同一个关联文档。
+// 所以匹配应该在"客户"这一层做，而不是"岗位"层——一个客户有 5 个岗位时，不该再
+// 因为对不上具体哪个岗位而报"多条待确认"，它们指向的是同一个文档。
+//
+// 返回结构：每个客户一条，带上它的文档引用（取该客户名下第一条填了文档的岗位行的引用，
+// 因为同客户共用同一个文档，取哪条都一样）和它名下的岗位名列表（仅用于喂给 LLM 做语义
+// 参考，帮助模型确认"这条更新确实是这个客户的"，不参与最终写哪个文档的决策）。
+async function fetchAllClients() {
+  const jobs = await fetchAllJobs();
+  // 用"去空格 + 忽略大小写"后的客户名作为归拢 key。实测（2026-07 用户 Base）里存在
+  // 同一客户大小写不一致被拆成两条的情况（例如 Huawei / HuaWei、Alicloud / AliCloud），
+  // 而且往往只有其中一种写法填了文档。按规范化 key 合并能把它们并成一个客户，
+  // 顺带把有文档的那一份的文档引用捡回来，避免误报"涉及多个客户"或写到没文档的那份。
+  const byKey = new Map();
+
+  for (const job of jobs) {
+    const company = (job.company || '').trim();
+    if (!company) continue; // 没填客户名的行跳过，无法归类
+    const key = company.toLowerCase();
+    if (!byKey.has(key)) {
+      byKey.set(key, { docRef: null, positions: [], nameCounts: new Map() });
+    }
+    const entry = byKey.get(key);
+    // 记录各种大小写写法出现的次数，最后用出现最多的那种作为展示名
+    entry.nameCounts.set(company, (entry.nameCounts.get(company) || 0) + 1);
+    if (job.position) entry.positions.push(job.position);
+    // 取第一个非空的文档引用作为这个客户的文档（同客户共用同一个文档）
+    if (!entry.docRef && job.docRef) entry.docRef = job.docRef;
+  }
+
+  return Array.from(byKey.values()).map((entry) => ({
+    company: [...entry.nameCounts.entries()].sort((a, b) => b[1] - a[1])[0][0],
+    docRef: entry.docRef,
+    positions: entry.positions,
+  }));
+}
+
+module.exports = { fetchAllJobs, fetchAllClients };
