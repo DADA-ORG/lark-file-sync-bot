@@ -120,7 +120,7 @@ module.exports = async (req, res) => {
     // 日期标题现在由 docsWrite.js 内部自动生成/分组，这里传客户名（用于兜底路径展示）和更新摘要。
     await appendUpdateToDoc(matched.docRef, matched.company, result.update_summary);
 
-    await replyToMessage(msgId, `已同步至《${matched.company}》文档`);
+    await replyToMessage(msgId, `✅ 已同步至《${matched.company}》文档`);
     await writeLog({
       msgId, chatId, rawText: cleanText,
       company: matched.company,
