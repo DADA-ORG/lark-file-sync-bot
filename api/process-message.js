@@ -72,7 +72,7 @@ module.exports = async (req, res) => {
     if (matchedIds.length === 0) {
       await replyToMessage(
         msgId,
-        `没能匹配到客户「${result.raw_company_guess || '未知'}」。麻烦确认下客户名称有没有写对，或先把这个客户加进客户表。`
+        `⚠️ 没能匹配到客户「${result.raw_company_guess || '未知'}」。麻烦确认下客户名称有没有写对，或先把这个客户加进客户表。`
       );
       await writeLog({
         msgId, chatId, rawText: cleanText,
@@ -91,7 +91,7 @@ module.exports = async (req, res) => {
         .join('\n');
       await replyToMessage(
         msgId,
-        `识别到可能涉及多个客户，请回复更明确的客户名称重新发一遍：\n${listText}`
+        `❓ 识别到可能涉及多个客户，请回复更明确的客户名称重新发一遍：\n${listText}`
       );
       await writeLog({
         msgId, chatId, rawText: cleanText,
@@ -105,7 +105,7 @@ module.exports = async (req, res) => {
     // 情况三：唯一客户，写入这个客户的文档
     const matched = clients[matchedIds[0]];
     if (!matched.docRef) {
-      await replyToMessage(msgId, `找到了客户「${matched.company}」，但还没给它配更新文档。请在客户表的「Lark Link/Notes」栏补上文档链接后再发一次。`);
+      await replyToMessage(msgId, `⚠️ 找到了客户「${matched.company}」，但还没给它配更新文档。请在客户表的「Lark Link/Notes」栏补上文档链接后再发一次。`);
       await writeLog({
         msgId, chatId, rawText: cleanText,
         company: matched.company,
@@ -131,7 +131,7 @@ module.exports = async (req, res) => {
   } catch (err) {
     console.error('处理消息失败', err);
     try {
-      await replyToMessage(msgId, `同步失败：${err.message}，请联系管理员查看日志`);
+      await replyToMessage(msgId, `❌ 同步失败：${err.message}，请联系管理员查看日志`);
       await writeLog({ msgId, chatId, rawText, status: 'error', detail: String(err) });
     } catch (e2) {
       console.error('连失败反馈都发不出去', e2);
