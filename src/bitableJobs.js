@@ -26,15 +26,30 @@ function extractDocRef(rawValue) {
     return null;
   };
 
+  // 裸 token 长这样：一串 20~30 位的字母数字，没有空格、没有标点。
+  // 「OKX Updates」「[Update] Metabit」这种是文档标题，不是 token，不能硬当 token 用。
+  const looksLikeToken = (s) => /^[A-Za-z0-9]{16,40}$/.test(s);
+
+  // 填了内容但不是可用的文档链接（比如贴成了 /record/ 的 Bitable 记录链接，
+  // 或者只写了文档标题）。返回 invalid 而不是 null，好让上层区分
+  //「压根没填」和「填了但填错了」—— 这两种给顾问的提示完全不一样。
+  const invalid = (raw) => ({ type: 'invalid', raw: String(raw).slice(0, 120) });
+
   if (typeof rawValue === 'string') {
-    return extractRef(rawValue) || (rawValue.trim() ? { type: 'docx', token: rawValue.trim() } : null);
+    const s = rawValue.trim();
+    if (!s) return null;
+    return extractRef(s) || (looksLikeToken(s) ? { type: 'docx', token: s } : invalid(s));
   }
   if (Array.isArray(rawValue) && rawValue[0]) {
     if (rawValue[0].file_token) return { type: 'docx', token: rawValue[0].file_token };
-    if (rawValue[0].url) return extractRef(rawValue[0].url);
+    if (rawValue[0].url) return extractRef(rawValue[0].url) || invalid(rawValue[0].url);
+    if (rawValue[0].text) return extractDocRef(rawValue[0].text);
   }
   if (typeof rawValue === 'object' && rawValue.link) {
-    return extractRef(rawValue.link);
+    return extractRef(rawValue.link) || invalid(rawValue.link);
+  }
+  if (typeof rawValue === 'object' && rawValue.text) {
+    return extractDocRef(rawValue.text);
   }
   return null;
 }
@@ -105,8 +120,11 @@ async function fetchAllClients() {
     // 记录各种大小写写法出现的次数，最后用出现最多的那种作为展示名
     entry.nameCounts.set(company, (entry.nameCounts.get(company) || 0) + 1);
     if (job.position) entry.positions.push(job.position);
-    // 取第一个非空的文档引用作为这个客户的文档（同客户共用同一个文档）
-    if (!entry.docRef && job.docRef) entry.docRef = job.docRef;
+    // 取第一个【可用】的文档引用作为这个客户的文档（同客户共用同一个文档）。
+    // 同一客户下如果有的行填对了、有的行填错了(invalid)，要优先用填对的那条。
+    if (job.docRef && (!entry.docRef || (entry.docRef.type === 'invalid' && job.docRef.type !== 'invalid'))) {
+      entry.docRef = job.docRef;
+    }
   }
 
   return Array.from(byKey.values()).map((entry) => ({

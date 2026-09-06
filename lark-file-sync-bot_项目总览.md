@@ -11,6 +11,53 @@
 
 ---
 
+## ⚠️ 2026-09-06 大修：为什么它以前"一次都没成功过"
+
+Arlene 反馈"感觉这个 bot 没有一次记录正确过"。查下来是**两个独立故障，一个卡入口一个卡出口，合起来没有任何一条路能走通**：
+
+| 消息格式 | 死在哪 | 群里看到的 |
+|---|---|---|
+| 富文本（加粗标题 + 项目符号） | **入口**：正文根本没解析出来 | ⚠️ 没能匹配到客户「未知」 |
+| 纯文本 | **出口**：客户匹配对了，但 bot 打不开那份文档 | ❌ 1770032 forBidden |
+
+顾问写得越规范（标题 + 分点）越必然失败；写得随便的纯文本能过第一关，又倒在权限上。
+
+### 已修（本次）
+
+1. **富文本解析** —— 新增 `src/messageText.js`。原来只有一行 `JSON.parse(content).text`，
+   那只对 `message_type='text'` 成立。post 消息的 content 是 `{title, content:[[{tag,text}]]}`，
+   `.text` 是 undefined → 正文变成空串 → LLM 什么都读不到 → 一律回「未知」。
+   现在标题/每条 bullet/链接都能读，`@所有人` 剥掉，图片文件语音直接跳过（不再白调一次 Claude）。
+2. **@All 不再被当成"找 bot 办事"** —— 原判断 `mentions.length > 0 && !mentionedBot` 在
+   mentions 为空时直接放行，而 Lark 的 @所有人 会把消息推给 bot 但不带它的 open_id。
+   现在：群里必须明确 @bot 才算"找它办事"；被 @All 扫到的消息**成功照样归档并回 ✅，
+   失败一声不吭**（不在全员通知下面刷报错）。私聊不受影响。
+3. **文档权限报错改成人话** —— `1770032 forBidden` 现在会直接说"bot 没被加成这个文档的
+   协作者，请「···」→「添加文档应用」加上并给可编辑权限"。见 `docsWrite.js` 的 `friendlyDocError`。
+4. **链接贴错不再硬塞 API** —— `extractDocRef` 原来碰到认不出的字符串会当成 doc token 直接用。
+   实际数据里 `AIPULSE` 那条贴的是 `/record/` 开头的**多维表格记录链接**，不是文档链接。
+   现在返回 `{type:'invalid'}`，顾问会看到"填的不是文档链接：<原文>"。
+5. **防止写错文档** —— 客户表里有一家客户就叫 `Confidential Search`，而这是招聘行话，
+   顾问消息里经常出现（"这是一个 Confidential Search"/"Confidential Role"）。解析修好后
+   模型很可能匹配到它、把别人的更新写进这份文档 —— **这种错不报错，没人会发现**。
+   已在 `llmExtract.js` 的 prompt 里加两条硬规则：客户名看第一行（团队习惯是「OKX Updates」
+   这种开头）；名字是行话的客户要更强证据，宁可返回空让人确认。
+6. **新增体检脚本 `check-doc-access.js`** —— 把客户表里每个客户的文档逐个测能读/能写，
+   只读不写。需要 Vercel 上那套环境变量。
+
+### 还没解决
+
+- **逐个文档的权限**：得一份份把 bot 加成协作者。跑 `check-doc-access.js` 拿清单。
+- **日志表一行都没有**：`BOT日志表` 导出只有表头 0 行，而 `bitableLog.js` 的 `writeLog`
+  出错只 `console.error` **不抛错** → 写失败没人会知道。等于这个 bot 上线至今**没有任何审计记录**。
+- **客户表数据**（要在 Base 里改，代码改不了）：
+  - 16 个客户没填文档链接，其中还在跑的 8 个：Bytedance(7岗) / Superpower X AI(6) /
+    Volar Cloud(5) / Fragment Works / Calder / People's Association / SEA / 嘉楠科技
+  - `AIPULSE` 的链接要换成 `/docx/` 或 `/wiki/` 开头的真文档链接
+  - 建议给 `Confidential Search` 改名（如 `[保密客户] 代号X`）、`SEA` 改全称，避免误匹配
+
+（数据结论来自 2026-09-06 的 `Open Position Tracker.xlsx` 导出：382 行 → 88 个去重客户。）
+
 ## 业务逻辑（端到端流程）
 
 1. 顾问在已拉 bot 入群的飞书群里发一条消息，@bot 并说明公司、岗位和更新内容（口语化即可，不要求逐字精确）。
@@ -85,7 +132,7 @@ Git 远程仓库：`https://github.com/DADA-ORG/lark-file-sync-bot.git`，分支
 
 ## 权限交接现状
 
-- **Lark 自建应用**：App ID `cli_aad231d036b85ee6`，归属 dadaconsultants 账号下的自建应用；App Secret 已在 2026-07-17 换成正式凭证，写入本地 `.env` 和 Vercel 环境变量。
+- **Lark 自建应用**：App ID `cli_aad23ce453399ee9`（2026-07-29 更正：此前误记为 cli_aad231d036b85ee6），归属 dadaconsultants 账号下的自建应用；App Secret 已在 2026-07-17 换成正式凭证，写入本地 `.env` 和 Vercel 环境变量。
 - **GitHub 仓库**：`DADA-ORG` 组织下的 `lark-file-sync-bot`，具体谁有 push 权限 `[待补充：不确定，建议项目负责人核实组织成员和仓库权限设置]`。
 - **Vercel 项目**：归属账号未知（可能通过 GitHub OAuth 关联），建议登录 Vercel 后台在 Settings 里核实 owner 和团队成员权限。
 - **Lark 正式 Base / 知识库权限**：2026-07-17 早些时候访问这个正式知识库节点（`JCLgwEygCiY907kU1KKlcjBxgab`）报过 `131006 permission denied` 错误（应用没被加为知识库协作者），项目负责人已确认处理完成，正式 Base 的读写链路应已打通——建议下次有人接手时，实际发一条测试消息复核一遍，而不是只看这里的记录。

@@ -5,6 +5,22 @@ const config = require('./config');
 // 1=Page 2=Text 3=Heading1 5=Heading3 12=Bullet(无序列表)
 const BLOCK_TYPE = { PAGE: 1, TEXT: 2, HEADING1: 3, HEADING3: 5 };
 
+// Lark 云文档常见错误码 → 顾问看得懂的话 + 具体怎么修。
+// 1770032 forBidden 是最常见的一个：应用本身有 docx:document 权限，但【这一份文档】
+// 没有把 bot 加成协作者。注意它有两种表现：
+//   - 拉取 blocks 就失败 → bot 连读都读不了
+//   - 能读、写的时候才失败 → bot 只有只读权限（常见于只从知识库继承了只读）
+const DOC_PERM_CODES = new Set([1770032, 1254302, 1254043, 99991672, 99991671]);
+function friendlyDocError(action, code, msg, docRef) {
+  const where = docRef ? `（${docRef.type}: ${docRef.token}）` : '';
+  if (DOC_PERM_CODES.has(Number(code))) {
+    return `bot 打不开这份客户文档${where} —— 没被加成这个文档的协作者。`
+      + `请打开该文档 →「···」→「添加文档应用」→ 加上「Group- File Sync Bot」并给【可编辑】权限。`
+      + `（原始错误 ${code} ${msg}）`;
+  }
+  return `${action}失败: ${code} ${msg}${where}`;
+}
+
 function blockPlainText(block) {
   const elements =
     block.text?.elements || block.heading1?.elements || block.heading2?.elements ||
@@ -29,7 +45,7 @@ function formatDateHeading(date) {
 }
 
 // 拉取文档全部 block（分页），用于定位锚点 block 和根 block
-async function listAllBlocks(documentId, token) {
+async function listAllBlocks(documentId, token, docRef) {
   const blocks = [];
   let pageToken = '';
   do {
@@ -44,7 +60,7 @@ async function listAllBlocks(documentId, token) {
     });
     const data = await resp.json();
     if (data.code !== 0) {
-      throw new Error(`拉取文档 blocks 失败: ${data.code} ${data.msg}`);
+      throw new Error(friendlyDocError('拉取文档内容', data.code, data.msg, docRef));
     }
     blocks.push(...(data.data.items || []));
     pageToken = data.data.has_more ? data.data.page_token : '';
@@ -81,7 +97,7 @@ async function resolveDocumentId(docRef, token) {
   throw new Error(`未知的文档引用类型: ${docRef.type}`);
 }
 
-async function createChildren(documentId, parentBlockId, index, children, token) {
+async function createChildren(documentId, parentBlockId, index, children, token, docRef) {
   const resp = await fetch(
     `${config.lark.apiBaseUrl}/open-apis/docx/v1/documents/${documentId}/blocks/${parentBlockId}/children`,
     {
@@ -95,7 +111,7 @@ async function createChildren(documentId, parentBlockId, index, children, token)
   );
   const data = await resp.json();
   if (data.code !== 0) {
-    throw new Error(`写入文档失败: ${data.code} ${data.msg}`);
+    throw new Error(friendlyDocError('写入文档', data.code, data.msg, docRef));
   }
   return data;
 }
@@ -114,7 +130,7 @@ async function createChildren(documentId, parentBlockId, index, children, token)
 async function appendUpdateToDoc(docRef, clientLabel, text) {
   const token = await getTenantAccessToken();
   const documentId = await resolveDocumentId(docRef, token);
-  const blocks = await listAllBlocks(documentId, token);
+  const blocks = await listAllBlocks(documentId, token, docRef);
   const blocksById = new Map(blocks.map((b) => [b.block_id, b]));
 
   const rootBlock = blocks.find((b) => b.block_type === BLOCK_TYPE.PAGE);
@@ -144,10 +160,10 @@ async function appendUpdateToDoc(docRef, clientLabel, text) {
       block_type: BLOCK_TYPE.HEADING1,
       heading1: { elements: [{ text_run: { content: config.doc.anchorBlockText } }] },
     };
-    const created = await createChildren(documentId, rootBlock.block_id, 0, [anchorHeadingBlock], token);
+    const created = await createChildren(documentId, rootBlock.block_id, 0, [anchorHeadingBlock], token, docRef);
     const newAnchorId = created.data.children[0].block_id;
     // 新锚点下面还没有任何内容，直接放"今天日期标题 + 第一条更新"
-    await createChildren(documentId, newAnchorId, 0, [dateHeadingBlock, makeTextBlock(1)], token);
+    await createChildren(documentId, newAnchorId, 0, [dateHeadingBlock, makeTextBlock(1)], token, docRef);
     return { usedFallback: false };
   }
 
@@ -163,7 +179,8 @@ async function appendUpdateToDoc(docRef, clientLabel, text) {
       anchorBlock.block_id,
       0,
       [dateHeadingBlock, makeTextBlock(1)],
-      token
+      token,
+      docRef
     );
     return { usedFallback: false };
   }
@@ -181,9 +198,9 @@ async function appendUpdateToDoc(docRef, clientLabel, text) {
       break; // 遇到下一个日期标题（或其它非正文块），今天的区间到此为止
     }
   }
-  await createChildren(documentId, anchorBlock.block_id, insertAt, [makeTextBlock(existingCount + 1)], token);
+  await createChildren(documentId, anchorBlock.block_id, insertAt, [makeTextBlock(existingCount + 1)], token, docRef);
 
   return { usedFallback: false };
 }
 
-module.exports = { appendUpdateToDoc, resolveDocumentId, listAllBlocks, blockPlainText };
+module.exports = { appendUpdateToDoc, resolveDocumentId, listAllBlocks, blockPlainText, friendlyDocError };
