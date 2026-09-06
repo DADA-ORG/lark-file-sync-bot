@@ -136,9 +136,10 @@ module.exports = async (req, res) => {
     }
     // 填了内容但不是文档链接（常见：贴成了 /record/ 的 Bitable 记录链接，或者只写了文档标题）
     if (matched.docRef.type === 'invalid') {
+      const kind = matched.docRef.kind ? `那是${matched.docRef.kind}，不是文档链接。` : '这个格式认不出来。';
       await sayIfAsked(
-        `⚠️ 客户「${matched.company}」的「Lark Link/Notes」填的不是文档链接：${matched.docRef.raw}\n`
-        + '请打开那份客户文档，复制浏览器地址栏里 /docx/ 或 /wiki/ 开头的链接贴回去。'
+        `⚠️ 客户「${matched.company}」的「Lark Link/Notes」里存的是：${matched.docRef.raw}\n`
+        + `${kind}请打开那份客户文档，复制浏览器地址栏里 /docx/ 或 /wiki/ 开头的链接贴回去。`
       );
       await writeLog({
         msgId, chatId, rawText: cleanText,

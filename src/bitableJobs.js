@@ -18,12 +18,33 @@ const config = require('./config');
 function extractDocRef(rawValue) {
   if (!rawValue) return null;
 
+  // Lark 云文档的 URL 形态比原来写的两种多。实测踩过：
+  //   /wiki/<token>            知识库节点（要再换一次 obj_token，见 docsWrite.resolveDocumentId）
+  //   /docx/<token>            新版文档
+  //   /docs/<token>            旧版文档（原代码不认，会被当成"不是链接"）
+  //   /wiki/space/... ?node=   知识库里带 node 参数的形态
+  //   /record/<token>          ⚠️ 多维表格【记录】链接，不是文档（AIPULSE 就贴错成这个）
+  //   /base/ /sheets/ /file/   ⚠️ 也都不是文档
   const extractRef = (url) => {
-    let match = url.match(/wiki\/([a-zA-Z0-9]+)/);
+    const s = String(url);
+    // 先看有没有显式的 node 参数（知识库分享出来的链接常带）
+    let match = s.match(/[?&]node[_-]?token=([A-Za-z0-9]{10,})/i);
     if (match) return { type: 'wiki', token: match[1] };
-    match = url.match(/docx\/([a-zA-Z0-9]+)/);
+    match = s.match(/\/wiki\/(?!space\/)([A-Za-z0-9]{10,})/);
+    if (match) return { type: 'wiki', token: match[1] };
+    match = s.match(/\/(?:docx|docs|doc)\/([A-Za-z0-9]{10,})/);
     if (match) return { type: 'docx', token: match[1] };
     return null;
+  };
+
+  // 贴成了别的东西（记录/表格/文件…）时，告诉顾问他贴的到底是什么
+  const WRONG_KIND = {
+    record: '多维表格的【记录】链接', base: '多维表格链接', sheets: '电子表格链接',
+    sheet: '电子表格链接', file: '文件链接', drive: '云盘链接', minutes: '妙记链接',
+  };
+  const wrongKindOf = (url) => {
+    const m = String(url).match(/larksuite\.com\/([a-z]+)\//i) || String(url).match(/\/([a-z]+)\/[A-Za-z0-9]{10,}/);
+    return m ? WRONG_KIND[m[1].toLowerCase()] : null;
   };
 
   // 裸 token 长这样：一串 20~30 位的字母数字，没有空格、没有标点。
@@ -33,7 +54,14 @@ function extractDocRef(rawValue) {
   // 填了内容但不是可用的文档链接（比如贴成了 /record/ 的 Bitable 记录链接，
   // 或者只写了文档标题）。返回 invalid 而不是 null，好让上层区分
   //「压根没填」和「填了但填错了」—— 这两种给顾问的提示完全不一样。
-  const invalid = (raw) => ({ type: 'invalid', raw: String(raw).slice(0, 120) });
+  // ⚠️ raw 会被拼进群消息里。如果原样带着 https:// 发出去，Lark 会把它渲染成
+  //    「📄 文档标题」的卡片，反而看不见真实链接长什么样 —— 排查时最需要的信息就没了。
+  //    所以这里把协议头和域名去掉，只留路径（/xxx/yyyy），Lark 不会去展开它。
+  const invalid = (raw) => {
+    const s = String(raw).slice(0, 200);
+    const path = s.replace(/^https?:\/\/[^/]+/i, '') || s;
+    return { type: 'invalid', raw: path, kind: wrongKindOf(s) };
+  };
 
   if (typeof rawValue === 'string') {
     const s = rawValue.trim();
