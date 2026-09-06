@@ -65,7 +65,18 @@ async function canListBlocks(token, documentId) {
       row.detail = '客户表「Lark Link/Notes」列是空的 → bot 会回「还没配更新文档」';
       rows.push(row); continue;
     }
-    row.docRef = `${c.docRef.type}:${c.docRef.token}`;
+    row.docRef = `${c.docRef.type}:${c.docRef.token || c.docRef.raw}`;
+
+    if (c.docRef.type === 'invalid') {
+      row.status = '❌ 填的不是文档链接';
+      row.detail = `${c.docRef.kind ? c.docRef.kind + '：' : ''}${c.docRef.raw} → 换成 /docx/ 或 /wiki/ 开头的链接`;
+      rows.push(row); continue;
+    }
+    if (c.docRef.type === 'docs_legacy') {
+      row.status = '❌ 旧版文档';
+      row.detail = 'bot 的新版文档接口读不了 → 打开文档「···」→「升级为新版文档」，再把新链接贴回表里';
+      rows.push(row); continue;
+    }
 
     let documentId;
     try {
@@ -110,8 +121,11 @@ async function canListBlocks(token, documentId) {
   console.log('\n' + '='.repeat(110));
   console.log(`✅ 可读可写 ${ok.length}　⚠️ 只读/存疑 ${ro.length}　❌ 完全不通 ${bad.length}　（共 ${rows.length}）`);
   if (ro.length + bad.length) {
-    console.log('\n修法：打开对应客户文档 →「···」→「添加文档应用」→ 加「Group- File Sync Bot」并给【可编辑】。');
-    console.log('　　　「没填文档链接」那种是数据问题，去客户表的「Lark Link/Notes」列补链接。');
+    console.log('\n修法速查：');
+    console.log('  ⚠️ 只读/读不了 → 打开该文档「···」→「添加文档应用」→ 加「Group- File Sync Bot」并给【可编辑】');
+    console.log('  ❌ 旧版文档     → 打开该文档「···」→「升级为新版文档」，再把新链接贴回客户表');
+    console.log('  ❌ 不是文档链接 → 客户表里换成 /docx/ 或 /wiki/ 开头的真链接');
+    console.log('  ❌ 没填链接     → 客户表「Lark Link/Notes」列补上');
   }
 
   if (process.argv.includes('--csv')) {

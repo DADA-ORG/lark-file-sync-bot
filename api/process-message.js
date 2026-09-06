@@ -134,6 +134,23 @@ module.exports = async (req, res) => {
       res.status(200).send('no doc token');
       return;
     }
+    // 旧版 Lark 文档：bot 用的 docx v1 接口读不了（会报 1770002 not found）。
+    // 这不是权限问题，得先把文档升级成新版。
+    if (matched.docRef.type === 'docs_legacy') {
+      await sayIfAsked(
+        `⚠️ 客户「${matched.company}」配的是【旧版】Lark 文档，bot 写不进去。\n`
+        + '修法：打开那份文档 → 右上角「···」→「升级为新版文档」，升级完地址会从 /docs/ 变成 /docx/，\n'
+        + '再把新链接贴回客户表的「Lark Link/Notes」栏就好了。（文档内容不会丢）'
+      );
+      await writeLog({
+        msgId, chatId, rawText: cleanText,
+        company: matched.company,
+        status: 'legacy_doc', detail: matched.docRef.token,
+      });
+      res.status(200).send('legacy doc');
+      return;
+    }
+
     // 填了内容但不是文档链接（常见：贴成了 /record/ 的 Bitable 记录链接，或者只写了文档标题）
     if (matched.docRef.type === 'invalid') {
       const kind = matched.docRef.kind ? `那是${matched.docRef.kind}，不是文档链接。` : '这个格式认不出来。';

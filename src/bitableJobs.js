@@ -33,8 +33,19 @@ function extractDocRef(rawValue) {
     match = s.match(/\/wiki\/(?!space\/)([A-Za-z0-9]{10,})/);
     if (match) return { type: 'wiki', token: match[1] };
     match = s.match(/\/(?:docx|docs|doc)\/([A-Za-z0-9]{10,})/);
-    if (match) return { type: 'docx', token: match[1] };
+    if (match) return { type: docTypeOf(match[1], s), token: match[1] };
     return null;
+  };
+
+  // ⚠️ 旧版文档 ≠ 新版文档。bot 走的是 docx v1 接口，只能读写【新版】文档。
+  // 拿旧版 token 去调 docx 接口会报 1770002 not found —— 不是权限问题，
+  // 是这份文档对这个接口来说压根不存在。（2026-09-06 实测：OKX 的文档就是旧版。）
+  // token 前缀：旧版 doccn* / docus*；新版 doxcn* / doxus*（也有无前缀的纯随机串）。
+  const isLegacyDocToken = (t) => /^doc(?!x)[a-z]{2}/i.test(String(t));
+  const docTypeOf = (token, url) => {
+    if (isLegacyDocToken(token)) return 'docs_legacy';
+    if (/\/docs?\//.test(url) && !/\/docx\//.test(url)) return 'docs_legacy';
+    return 'docx';
   };
 
   // 贴成了别的东西（记录/表格/文件…）时，告诉顾问他贴的到底是什么
